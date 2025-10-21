@@ -1,0 +1,72 @@
+# .github/workflows/run-model.yaml
+# Workflow para treinar o modelo periodicamente e persistir artefatos
+# Agendado para os dias 1 e 16 de cada mês 
+# Autor: Pedro Falcão 
+name: Treinar modelo e persistir artefatos
+
+on:
+  schedule:
+    # Dias 1 e 16, 00:00 em America/Recife (03:00 UTC)
+    - cron: "0 3 1,16 * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # necessário para dar push usando GITHUB_TOKEN
+
+concurrency:
+  group: treinar-modelo
+  cancel-in-progress: true
+
+jobs:
+  run-and-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # precisamos do histórico para rebase antes do push
+          persist-credentials: true  # usa GITHUB_TOKEN
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências (se houver requirements.txt)
+        if: hashFiles('requirements.txt') != ''
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Executar model.py
+        run: |
+          python model.py
+
+      - name: Commit e push de artefatos atualizados
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+
+          # Configure identidade do bot
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+          # Adiciona apenas os arquivos-alvo
+          git add -f label_encoder.pkl modelo_classificacao.h5 || true
+
+          # Se nada mudou, não faz commit
+          if git diff --cached --quiet; then
+            echo "Sem mudanças em label_encoder.pkl ou modelo_classificacao.h5."
+            exit 0
+          fi
+
+          # Commit
+          TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          git commit -m "Atualiza modelos (${TS}) [skip ci]"
+
+          # Rebase para evitar non-fast-forward e então push
+          git pull --rebase origin "${BRANCH}" || true
+          git push origin HEAD:"${BRANCH}"
