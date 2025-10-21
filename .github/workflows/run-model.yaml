@@ -21,12 +21,17 @@ jobs:
   run-and-commit:
     runs-on: ubuntu-latest
 
+    # 🔹 Aqui adicionamos as variáveis de ambiente globais do job
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Secret configurado no repositório
+      TF_ENABLE_ONEDNN_OPTS: "0"                  # (opcional) silencia warning do TensorFlow
+
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # precisamos do histórico para rebase antes do push
-          persist-credentials: true  # usa GITHUB_TOKEN
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Configurar Python
         uses: actions/setup-python@v5
@@ -67,6 +72,6 @@ jobs:
           TS="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
           git commit -m "Atualiza modelos (${TS}) [skip ci]"
 
-          # Rebase para evitar non-fast-forward e então push
+          # Rebase e push
           git pull --rebase origin "${BRANCH}" || true
           git push origin HEAD:"${BRANCH}"
